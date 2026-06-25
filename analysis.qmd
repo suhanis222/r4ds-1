@@ -2,5 +2,231 @@
 title: "Analyzing Music Data"
 author: "Suhani Shah"
 format: html
+execute:
+  echo: false
 ---
 
+
+```{r}
+#| message: false
+install.packages("tidyverse")
+library(tidyverse)
+billboard
+```
+
+```{r}
+#| cache: true
+billboard %>% 
+  select(artist, track, date.entered, wk1:wk4)
+summary(billboard$date.entered)
+
+```
+
+```{r}
+#| cache: true
+# Create the histogram and store the number of values used
+n_values <- sum(!is.na(billboard$wk6))
+
+hist(billboard$wk6, 
+     main = paste("Histogram of Week 6 Rankings (n =", n_values, ")"),
+     xlab = "Rankings", 
+     col = "skyblue")
+
+```
+
+```{r}
+#| cache: true
+library(dplyr)
+library(tidyr)
+
+billboard %>%
+  select(wk1, wk4, wk10, wk20, wk40, wk76) %>%
+  pivot_longer(cols = everything(), names_to = "Week", values_to = "Rankings") %>%
+  group_by(Week) %>%
+  summarize(
+    Present = sum(!is.na(Rankings)),
+    Missing = sum(is.na(Rankings))
+  )
+```
+
+```{r}
+#| cache: true
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+billboard %>%
+  pivot_longer(cols = starts_with("wk"), names_to = "week", values_to = "rank") %>%
+  mutate(week = as.numeric(str_remove(week, "wk"))) %>%
+  filter(!is.na(rank)) %>%
+  group_by(artist, track) %>%
+  summarize(
+    has_gap = (max(week) - min(week) + 1) > n(),
+    .groups = "drop"
+  ) %>%
+  count(re_entered = has_gap)
+
+```
+
+```{r}
+#| cache: true
+library(tidyverse)
+
+# Load and prepare the data
+data("billboard")
+
+# Process the data to compare wk1 and wk6
+analysis <- billboard %>%
+  select(track, wk1, wk6) %>%
+  mutate(
+    status = case_when(
+      is.na(wk1) | is.na(wk6) ~ "Missing",
+      wk6 < wk1 ~ "Improved",        # Lower number means higher rank
+      wk6 > wk1 ~ "Got Worse",
+      wk6 == wk1 ~ "Stayed the Same"
+    ),
+    rank_change = wk6 - wk1
+  )
+
+# 1. Count the statuses
+status_counts <- analysis %>%
+  count(status)
+
+# 2. Calculate median rank change (excluding missing values)
+median_change <- analysis %>%
+  filter(!is.na(wk1) & !is.na(wk6)) %>%
+  summarize(median_val = median(rank_change))
+
+# Print results
+print(status_counts)
+print(median_change)
+
+```
+
+```{r}
+#| cache: true
+library(tidyverse)
+
+# 1. Reshape the dataset from wide to long format
+billboard_long <- billboard %>%
+  pivot_longer(
+    cols = starts_with("wk"), 
+    names_to = "week", 
+    names_prefix = "wk",
+    names_transform = list(week = as.numeric), # Convert week to a number for plotting
+    values_to = "rank",
+    values_drop_na = TRUE                      # Drop weeks where the song wasn't on the chart
+  )
+
+# 2. Plot each song's ranking over time
+ggplot(billboard_long, aes(x = week, y = rank, group = track)) +
+  geom_line(alpha = 0.2, color = "darkblue") + # Use transparency due to many overlapping lines
+  scale_y_reverse() +                          # Reverse y-axis because rank 1 is the best
+  labs(
+    title = "Billboard Song Rankings Over Time",
+    x = "Week",
+    y = "Rank (1 is Top)"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+#| cache: true
+library(tidyverse)
+
+# 1. Ensure data is reshaped (from Exercise 9)
+billboard_long <- billboard %>%
+  pivot_longer(
+    cols = starts_with("wk"),
+    names_to = "week",
+    names_prefix = "wk",
+    names_transform = list(week = as.numeric),
+    values_to = "rank",
+    values_drop_na = TRUE
+  )
+
+# 2. Create a song-level summary
+song_summary <- billboard_long %>%
+  group_by(artist, track) %>%
+  summarize(
+    first_rank = rank[week == min(week)],
+    best_rank = min(rank),
+    first_week_best = min(week[rank == best_rank]),
+    total_weeks = n(),
+    .groups = "drop"
+  )
+
+# 3. Filter for songs that reached the Top 10
+top_10_songs <- song_summary %>%
+  filter(best_rank <= 10)
+
+# 4. Identify the three notable trajectories
+fastest_no1 <- top_10_songs %>%
+  filter(best_rank == 1) %>%
+  slice_min(first_week_best, n = 1)
+
+slowest_no1 <- top_10_songs %>%
+  filter(best_rank == 1) %>%
+  slice_max(first_week_best, n = 1)
+
+longest_run <- top_10_songs %>%
+  slice_max(total_weeks, n = 1)
+
+# Print the final insights
+print(fastest_no1)
+print(slowest_no1)
+print(longest_run)
+
+```
+
+```{r}
+#| cache: true
+library(tidyverse)
+
+# 1. Reshape the dataset from wide to long format
+billboard_long <- billboard %>%
+  pivot_longer(
+    cols = starts_with("wk"),
+    names_to = "week",
+    names_prefix = "wk",
+    names_transform = list(week = as.numeric),
+    values_to = "rank",
+    values_drop_na = TRUE
+  )
+
+# 2. Find tracks that peaked in the top 10
+top_10_tracks <- billboard_long %>%
+  group_by(track) %>%
+  filter(min(rank) <= 10) %>%
+  ungroup()
+
+# 3. Define the three notable songs to highlight
+highlight_tracks <- c("Independent Women Part I", "Higher") 
+# Note: Creed's "Higher" satisfies both the longest run and slowest to #1 in standard 2000 data.
+# If your specific dataset split them into three distinct songs, simply list all three here.
+
+# Separate into background tracks and highlighted tracks
+bg_data <- top_10_tracks %>% filter(!track %in% highlight_tracks)
+fg_data <- top_10_tracks %>% filter(track %in% highlight_tracks)
+
+# 4. Generate the plot
+ggplot() +
+  # Background layer: All top 10 songs in light gray
+  geom_line(data = bg_data, aes(x = week, y = rank, group = track), color = "lightgray", alpha = 0.5) +
+  # Foreground layer: Highlighted songs with distinct colors assigned to the aesthetic legend
+  geom_line(data = fg_data, aes(x = week, y = rank, color = track, group = track), linewidth = 1.2) +
+  # Format axes and design elements
+  scale_y_reverse(limits = c(100, 1), breaks = c(1, 10, 25, 50, 75, 100)) + 
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Hit Trajectories of Top 10 Billboard Songs",
+    subtitle = "Highlighting notable trajectories against all top 10 hits",
+    x = "Week on Chart",
+    y = "Rank",
+    color = "Notable Songs"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
